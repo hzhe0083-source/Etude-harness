@@ -1,0 +1,20 @@
+# Recovery rules (evolvable surface 2, design §3.1: r, fallback, chunk-budget defaults).
+# Loader: etude.core.config.load_recovery_rules(). Frozen thresholds are NOT here.
+# defaults also fill stop/on_fail keys the planner omits (etude.mcp.validate.normalize_node).
+version: 1
+defaults:
+  retry: 2                 # r: in-place retries of a failed node (on_fail.retry)
+  then: previous_node      # after r retries: previous_node | replan | abort
+  exec_steps: 25           # vla steps executed per chunk (of the 50-step pi0.5 chunk)
+  stall_chunks: 2          # chunks without joint progress before the node stops
+  max_chunks: 6            # hard chunk cap per node attempt
+fallback:
+  previous_node: last_verified   # return to the last node with a Pass verdict, re-run from there
+  max_backtracks: 2              # after this many backtracks in one episode, replan instead
+  replan_when_calls_left_below: 1  # no VLM budget left: never replan, fall back instead
+on_verdict:
+  Fail: retry_then_fallback
+  InsufficientEvidence: reobserve_then_inspect   # at most 1 inspect (design §4)
+  Blocked: replan                                # IK failure / out of workspace
+  SafetyStop: previous_node
+rules: []                  # conditional rules added by the editor, e.g. {when: {...}, do: {...}}

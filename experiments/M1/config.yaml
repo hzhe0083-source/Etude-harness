@@ -1,0 +1,102 @@
+# M1 — 条件 2：完整 harness（P1 规划 + P2 执行/验证），记忆关（docs/design/vla_harness_v1.md §5 M1 列、§6 条件 2 与条件 5）
+milestone: M1
+condition: 条件 2
+design_refs: ["§5 M1", "§3.2", "§3.3 ε 校准", "§6 条件 2", "§6 收益全来自缩短重查步长", "§8.3"]
+
+tasks:
+  dev: [stack_bowls, put_bottles_into_dustbin]
+  heldout: [build_tower, make_kong]
+step_lim: {stack_bowls: 800, put_bottles_into_dustbin: 700, build_tower: 1050, make_kong: 600}
+
+splits_file: experiments/splits.json
+seeds: [0, 1]                         # 开发 + 留出任务，seed 0/1 各 50
+eval_num: 50
+
+conditions:
+  key: condition                      # Research OS slot key（view.json cols.key）
+  values: [h1, h1_nstar]
+  h1:
+    harness: "全部 P1/P2；evolvable/ 初版（H1）；记忆关"
+    memory: off
+    vla_exec_steps: 25                # evolvable/rules/recovery.yaml defaults.exec_steps（DEFAULT_EXEC_STEPS）
+    stall_chunks: 2
+    max_chunks: 6
+    retry: 2
+    max_nodes: 8
+  h1_nstar:
+    harness: "同 h1，但 VLA 节点 exec_steps 固定为 N*（M0 选出）"
+    vla_exec_steps: N_star            # §6 "收益全来自缩短重查步长"：M1 内 VLA 节点 exec_steps 固定为 N*；对照 M0(N*)
+    run_if: "N* != 25；N* == 25 时与 h1 相同，不另跑，直接引用 h1 的 Run（预注册补充）"
+    entry_args: "--n <N*>"
+
+baseline:
+  ref: "M0 cell n=N*（同任务、同 seed、同布局配对）"
+  pairing: same_layout
+
+aa:                                   # §3.2：M1 再做一次 A/A，现任 = H1
+  reps: 3
+  split: V
+  seed: 1
+  tasks: [stack_bowls, put_bottles_into_dustbin]
+  incumbent: h1
+  eps_rule: "eps = max(4, max_{a<b} |S_a - S_b| + 1)"   # §3.3
+  eps_min: 4
+  eps_max: 15
+
+analysis:
+  primary: "配对 McNemar 单侧：开发任务 seed 0/1 合并 200 回合，H1 对 M0(N*)"
+  b: "H1 成功且 M0(N*) 失败的布局数"
+  c: "M0(N*) 成功且 H1 失败的布局数"
+  pass: "b - c >= eps 且 p <= 0.05"
+  mcnemar_p_max: 0.05                 # frozen gate.mcnemar_p_max
+  fnr_rule: "漏检率（验证器 Pass 而官方失败）不升；上升 > 2 pp 触发 §6 条件 2 后果"
+  shortcut_check: "按任务拆：put_bottles/make_kong 上 M1 − M0(N*) < ε 而 stack_bowls 上 ≥ ε → 结论限定为'短程任务收益=重查'"
+
+eval:
+  bench: RoboDojo
+  env_cfg: arx_x5
+  action_type_label: ee               # deploy.yml（§4 目录树）；动作类型逐字典推断，joint/ee 可交替
+  eval_batch: false                   # 强制 num_envs=1
+  num_envs: 1
+  request_timeout_s: 1800
+
+model:
+  policy: pi05
+  checkpoint_hf: "dataset=RoboDojo-Benchmark/RoboDojo@35efbc7dedfdbeeb6e95fb749bd885d73d483e41:ckpt/RoboDojo/Pi_05/RoboDojo-sim-arx_x5-joint-0/59999"
+  planner: claude-sonnet-5-5          # §8.3
+  editor: null
+  vlm_calls_per_episode_max: 12       # frozen budget.vlm_calls_per_episode
+  vlm_default_view: last_frame        # VISTA 式，inspect 按需（≤1 次/节点）
+
+budget:
+  episodes:
+    main: 400                         # h1：4 任务 × 2 seed × 50（§5 预算）
+    h1_nstar: 400                     # 仅 N* != 25 时；超出 §5 预算，见 prereg.md
+    aa: 300                           # 3 × 2 开发任务 × 50（§5 预算行未单列 A/A，单独记）
+  wall_hours_cap: 27                  # §5："约 400 回合 ≈ 27 h"
+  vlm_usd_cap: 120                    # §5："VLM 约 $120"
+  record: [vlm_calls, vlm_tokens, wall_s]
+
+checkpoints_to_clear:                 # §5 M1 卡点
+  - 节点边界阻塞 ≤1800 s（request_timeout_s，§8.4 #7 超时语义实测一次）
+  - perceive 检测器在三视角可用（§8.4 #6）
+
+metrics: [success_rate, successes, trials, score, vlm_calls, vlm_tokens, wall_s_per_episode, verifier_fnr]
+
+research:
+  intent: "完整 harness H1（记忆关、VLA exec_steps=N*）相对 M0(N*) 的配对 SR 增益"
+  decision_rule: "配对 SR1 − SR0(N*) ≥ ε 且 p≤0.05（开发任务 seed 0/1 合并 200 回合）；FNR 不升"
+  baseline: "M0 cell n=N*（同任务同 seed 同布局）"
+  aa_intent: "现任 H1 在 V 上重跑 3 次，得 M1 的 δ_AA 与 ε"
+  aa_decision_rule: "eps = max(4, max|S_a−S_b| + 1)；eps ≤ 15，否则 V 扩到 150"
+  experiment: null
+  aa_experiment: null
+  kind: main
+  aa_kind: replication
+  metric: success_rate
+  view: experiments/M1/view.json
+  aa_view: experiments/M1/view_aa.json
+  slot_keys: [task, condition, seed]
+  aa_slot_keys: [task, condition, rep]
+  checkpoint_env: RESEARCH_CHECKPOINT  # 见 M0/config.yaml
+  entry: scripts/run_harness.sh       # adapter 组件提供

@@ -1,0 +1,3056 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-os/v1/schema.json",
+  "title": "Research OS v1",
+  "description": "Small current-state ledger; command envelopes are validated before atomic updates.",
+  "$ref": "#/$defs/Ledger",
+  "$defs": {
+    "Ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "maxLength": 4096
+    },
+    "Ref": {
+      "$ref": "#/$defs/Ulid",
+      "description": "Canonical id of a record or event. Never an alias. Never a Handoff id."
+    },
+    "Alias": {
+      "type": "string",
+      "pattern": "^((H|E|O|C|D|P|HS)-[1-9][0-9]*|E[1-9][0-9]*-R[0-9]{3,})$",
+      "maxLength": 4096
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 4096
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "maxLength": 4096
+    },
+    "Actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "human",
+            "agent",
+            "system"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "Role": {
+      "enum": [
+        "proposer",
+        "executor",
+        "interpreter",
+        "verifier"
+      ]
+    },
+    "Source": {
+      "description": "Who or what produced a value. Says nothing about authority.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "human",
+            "agent",
+            "measured",
+            "derived",
+            "inherited"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "Actor id for human/agent.",
+          "maxLength": 4096
+        },
+        "from": {
+          "$ref": "#/$defs/Ref",
+          "description": "For inherited/derived: the record the value came from (e.g. Project id)."
+        }
+      }
+    },
+    "ProvenancedValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "source"
+      ],
+      "properties": {
+        "value": {},
+        "source": {
+          "$ref": "#/$defs/Source"
+        }
+      }
+    },
+    "Authority": {
+      "description": "The only allowed shape for authority. Authority binds to a record version, never to a single field.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "grant"
+          ],
+          "properties": {
+            "mode": {
+              "const": "explicit"
+            },
+            "grant": {
+              "$ref": "#/$defs/Ref",
+              "description": "event_id of the authority_granted event."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "policy"
+          ],
+          "properties": {
+            "mode": {
+              "const": "policy"
+            },
+            "policy": {
+              "$ref": "#/$defs/Ref",
+              "description": "id of an active Policy whose scope and permits cover this act."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "none"
+            }
+          }
+        }
+      ]
+    },
+    "AuthorityScope": {
+      "enum": [
+        "experiment_contract",
+        "claim_transition",
+        "decision",
+        "run_validity",
+        "policy",
+        "view_extension"
+      ]
+    },
+    "ApprovalRecord": {
+      "description": "Proof of a human act. quote is the human's verbatim words.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "channel",
+        "quote",
+        "at"
+      ],
+      "properties": {
+        "channel": {
+          "type": "string",
+          "description": "Where the human said it, e.g. chat session id.",
+          "maxLength": 4096
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      }
+    },
+    "Scope": {
+      "description": "Key -> non-empty list of values. Two scopes overlap iff they share >=1 key and every shared key's lists intersect.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "minItems": 1
+      }
+    },
+    "ExperimentKind": {
+      "enum": [
+        "feasibility",
+        "debug",
+        "search",
+        "main",
+        "ablation",
+        "replication",
+        "aggregation",
+        "dataset"
+      ]
+    },
+    "Contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent",
+        "decision_rule",
+        "baseline",
+        "primary_metric"
+      ],
+      "properties": {
+        "intent": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "decision_rule": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "baseline": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "primary_metric": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "view": {
+          "$ref": "#/$defs/ViewValue",
+          "description": "The table this experiment fills. Required before the contract can be authorized (A1)."
+        }
+      }
+    },
+    "ViewValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "source"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/ViewSpec"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        }
+      }
+    },
+    "SlotKey": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 4096
+    },
+    "Slot": {
+      "description": "Position of a Run in its experiment, e.g. {stage: eval, pretrain: c, task: T2, seed: '3'}. A newer Run in the same slot supersedes the older one.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/SlotKey"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    "ViewAxis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "values"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/SlotKey"
+        },
+        "values": {
+          "$ref": "#/$defs/ViewAxisValues"
+        }
+      }
+    },
+    "ViewAxisValues": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "ViewSpec": {
+      "description": "Structure of an experiment's table. Cell (r, c) holds the Runs whose slot equals cell.match + {rows.key: r, cols.key: c} (+ {replicates.key: v} for each replicate). Display text lives in experiment_view_styled, outside the contract.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rows",
+        "cols",
+        "cell"
+      ],
+      "properties": {
+        "rows": {
+          "$ref": "#/$defs/ViewAxis"
+        },
+        "cols": {
+          "$ref": "#/$defs/ViewAxis"
+        },
+        "cell": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "match",
+            "metric"
+          ],
+          "properties": {
+            "match": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/SlotKey"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "metric": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Key in the Runs' metrics.",
+              "maxLength": 4096
+            },
+            "replicates": {
+              "$ref": "#/$defs/ViewAxis"
+            }
+          }
+        },
+        "row_model": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/SlotKey"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "description": "Slot filter (plus {rows.key: r}) for the Runs whose checkpoint the row label links to."
+        }
+      }
+    },
+    "HFRef": {
+      "description": "A pinned Hugging Face object: repo plus the 40-hex commit revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "repo",
+        "revision"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "model",
+            "dataset"
+          ]
+        },
+        "repo": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "maxLength": 4096
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "maxLength": 4096
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\x00-\\x1f\\\\]+$",
+          "maxLength": 512
+        }
+      }
+    },
+    "ProductName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 4096
+    },
+    "ClaimStatus": {
+      "enum": [
+        "candidate",
+        "contested",
+        "supported",
+        "refuted",
+        "superseded"
+      ]
+    },
+    "Validity": {
+      "enum": [
+        "valid",
+        "invalid",
+        "unknown"
+      ]
+    },
+    "RunCapture": {
+      "description": "Filled by the `research run` wrapper. Never typed by hand.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "git",
+        "seed",
+        "inputs"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "git": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commit",
+            "repo"
+          ],
+          "properties": {
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$",
+              "maxLength": 4096
+            },
+            "repo": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "sha256": {
+                "$ref": "#/$defs/Sha256"
+              }
+            }
+          },
+          "maxItems": 32
+        }
+      }
+    },
+    "EventType": {
+      "enum": [
+        "project_initialized",
+        "project_updated",
+        "policy_granted",
+        "policy_revoked",
+        "hypothesis_created",
+        "hypothesis_closed",
+        "hypothesis_reopened",
+        "experiment_created",
+        "experiment_amended",
+        "experiment_completed",
+        "experiment_abandoned",
+        "authority_requested",
+        "authority_granted",
+        "authority_denied",
+        "experiment_dataset_recorded",
+        "experiment_marked_legacy",
+        "experiment_view_defined",
+        "experiment_view_styled",
+        "experiment_view_extended",
+        "run_planned",
+        "run_started",
+        "run_completed",
+        "run_validity_changed",
+        "run_interrupted",
+        "run_resumed",
+        "run_restarted",
+        "run_positioned",
+        "run_output_recorded",
+        "run_dataset_recorded",
+        "observation_created",
+        "observation_retracted",
+        "claim_proposed",
+        "claim_revised",
+        "claim_status_changed",
+        "claim_verification_recorded",
+        "decision_proposed",
+        "decision_made",
+        "decision_revoked",
+        "alias_reassigned",
+        "run_archived"
+      ]
+    },
+    "Event": {
+      "description": "Transient CLI command envelope; only current authorization records are retained in the ledger.",
+      "type": "object",
+      "required": [
+        "event_id",
+        "type",
+        "ts",
+        "actor",
+        "recorded_by",
+        "subject",
+        "payload"
+      ],
+      "properties": {
+        "event_id": {
+          "$ref": "#/$defs/Ulid"
+        },
+        "type": {
+          "$ref": "#/$defs/EventType"
+        },
+        "ts": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "recorded_by": {
+          "$ref": "#/$defs/Actor"
+        },
+        "role": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Role"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subject": {
+          "$ref": "#/$defs/Ref",
+          "description": "Record this event creates or changes. For *_created/*_proposed/*_started/*_granted(policy)/project_initialized it is the new record's id."
+        },
+        "payload": {
+          "type": "object"
+        }
+      },
+      "unevaluatedProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "const": "project_initialized"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_project"
+            },
+            "actor": {
+              "$ref": "#/$defs/HumanActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "project_updated"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_project_update"
+            },
+            "actor": {
+              "$ref": "#/$defs/HumanActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "policy_granted"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_policy_granted"
+            },
+            "actor": {
+              "$ref": "#/$defs/HumanActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "policy_revoked"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_human_reason"
+            },
+            "actor": {
+              "$ref": "#/$defs/HumanActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "hypothesis_created"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_hypothesis_created"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "hypothesis_closed"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_hypothesis_closed"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "hypothesis_reopened"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_reason"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "experiment_created"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_experiment_created"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "experiment_amended"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_experiment_amended"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "experiment_completed"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_experiment_completed"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "experiment_abandoned"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_reason"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "authority_requested"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_authority_requested"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "authority_granted"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_authority_answer"
+            },
+            "actor": {
+              "$ref": "#/$defs/HumanActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "authority_denied"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_authority_answer"
+            },
+            "actor": {
+              "$ref": "#/$defs/HumanActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_started"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_run_started"
+            },
+            "recorded_by": {
+              "$ref": "#/$defs/SystemActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_completed"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_run_completed"
+            },
+            "recorded_by": {
+              "$ref": "#/$defs/SystemActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_validity_changed"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_run_validity_changed"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "experiment_marked_legacy"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_reason"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "experiment_dataset_recorded"
+            },
+            "payload": {
+              "$ref": "#/$defs/DatasetCard"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "experiment_view_styled"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_view_style"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "experiment_view_extended"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_view_extended"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_planned"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_run_planned"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_restarted"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_run_resumed"
+            },
+            "recorded_by": {
+              "$ref": "#/$defs/SystemActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "experiment_view_defined"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_view_defined"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_positioned"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_run_positioned"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_interrupted"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_reason"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_resumed"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_run_resumed"
+            },
+            "recorded_by": {
+              "$ref": "#/$defs/SystemActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_dataset_recorded"
+            },
+            "payload": {
+              "$ref": "#/$defs/DatasetResult"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_output_recorded"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_run_output_recorded"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "observation_created"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_observation_created"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "observation_retracted"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_reason"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "claim_proposed"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_claim_proposed"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "claim_revised"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_claim_revised"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "claim_status_changed"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_claim_status_changed"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "claim_verification_recorded"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_claim_verification"
+            },
+            "role": {
+              "const": "verifier"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "decision_proposed"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_decision_proposed"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "decision_made"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_authority_only"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "decision_revoked"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_decision_revoked"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "alias_reassigned"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_alias_reassigned"
+            },
+            "recorded_by": {
+              "$ref": "#/$defs/SystemActor"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run_archived"
+            },
+            "payload": {
+              "$ref": "#/$defs/P_run_archived"
+            },
+            "recorded_by": {
+              "$ref": "#/$defs/SystemActor"
+            }
+          }
+        }
+      ]
+    },
+    "HumanActor": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Actor"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "human"
+            }
+          }
+        }
+      ]
+    },
+    "SystemActor": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Actor"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "system"
+            }
+          }
+        }
+      ],
+      "description": "The `research` CLI itself."
+    },
+    "P_reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "P_human_reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "approval_record"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "approval_record": {
+          "$ref": "#/$defs/ApprovalRecord"
+        }
+      }
+    },
+    "P_authority_only": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority"
+      ],
+      "properties": {
+        "authority": {
+          "$ref": "#/$defs/Authority"
+        }
+      }
+    },
+    "P_project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "research_goal",
+        "default_primary_metric",
+        "default_baseline",
+        "hard_constraints",
+        "approval_record"
+      ],
+      "properties": {
+        "research_goal": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "default_primary_metric": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "default_baseline": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "hard_constraints": {
+          "$ref": "#/$defs/ProvenancedValue",
+          "description": "value: array of strings."
+        },
+        "approval_record": {
+          "$ref": "#/$defs/ApprovalRecord"
+        }
+      }
+    },
+    "P_project_update": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approval_record"
+      ],
+      "minProperties": 2,
+      "properties": {
+        "research_goal": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "default_primary_metric": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "default_baseline": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "hard_constraints": {
+          "$ref": "#/$defs/ProvenancedValue"
+        },
+        "approval_record": {
+          "$ref": "#/$defs/ApprovalRecord"
+        }
+      }
+    },
+    "P_policy_granted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "scope",
+        "permits",
+        "constraints",
+        "require_verification",
+        "approval_record"
+      ],
+      "properties": {
+        "alias": {
+          "$ref": "#/$defs/Alias"
+        },
+        "scope": {
+          "oneOf": [
+            {
+              "const": "project"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "hypothesis"
+              ],
+              "properties": {
+                "hypothesis": {
+                  "$ref": "#/$defs/Ref"
+                }
+              }
+            }
+          ]
+        },
+        "permits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "experiment_kinds",
+            "claim_transitions",
+            "decisions",
+            "run_validity"
+          ],
+          "properties": {
+            "experiment_kinds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ExperimentKind"
+              },
+              "description": "Committed contracts of these kinds are authorized if they satisfy constraints."
+            },
+            "claim_transitions": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "supported",
+                  "refuted"
+                ]
+              }
+            },
+            "decisions": {
+              "type": "boolean"
+            },
+            "run_validity": {
+              "type": "boolean"
+            }
+          }
+        },
+        "constraints": {
+          "type": "object",
+          "description": "e.g. {primary_metric, baseline, max_gpu_hours}. A contract outside these is not covered."
+        },
+        "require_verification": {
+          "type": "boolean"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "approval_record": {
+          "$ref": "#/$defs/ApprovalRecord"
+        }
+      }
+    },
+    "P_hypothesis_created": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "statement",
+        "scope"
+      ],
+      "properties": {
+        "alias": {
+          "$ref": "#/$defs/Alias"
+        },
+        "statement": {
+          "type": "string",
+          "description": "Falsifiable or empirically evaluable proposition.",
+          "maxLength": 4096
+        },
+        "parent": {
+          "$ref": "#/$defs/Ref"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        }
+      }
+    },
+    "P_hypothesis_closed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resolution"
+      ],
+      "properties": {
+        "resolution": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          },
+          "minItems": 1,
+          "description": "Claims that are supported/refuted, or Decisions that are made."
+        }
+      }
+    },
+    "P_experiment_created": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "hypothesis",
+        "kind",
+        "mode",
+        "motivated_by"
+      ],
+      "properties": {
+        "alias": {
+          "$ref": "#/$defs/Alias"
+        },
+        "hypothesis": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Ref"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null only when kind = debug."
+        },
+        "kind": {
+          "$ref": "#/$defs/ExperimentKind"
+        },
+        "mode": {
+          "enum": [
+            "scout",
+            "committed"
+          ]
+        },
+        "motivated_by": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          }
+        },
+        "contract": {
+          "$ref": "#/$defs/Contract"
+        },
+        "view": {
+          "$ref": "#/$defs/ViewValue",
+          "description": "Only for kind = dataset, which has no contract (R38)."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "committed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "contract"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "dataset"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "view"
+            ],
+            "not": {
+              "required": [
+                "contract"
+              ]
+            },
+            "properties": {
+              "mode": {
+                "const": "scout"
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "view"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "hypothesis": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "const": "debug"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "P_experiment_amended": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "reason"
+      ],
+      "properties": {
+        "contract": {
+          "$ref": "#/$defs/Contract",
+          "description": "Full replacement. This event_id becomes the new contract version; prior grants no longer apply."
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "P_experiment_completed": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decision_rule_result": {
+          "enum": [
+            "met",
+            "not_met",
+            "inconclusive"
+          ],
+          "description": "Required for committed experiments (checked by `research validate`)."
+        }
+      }
+    },
+    "P_authority_requested": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "subject_version",
+        "requested",
+        "summary"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/AuthorityScope"
+        },
+        "subject_version": {
+          "$ref": "#/$defs/Ref",
+          "description": "event_id of the latest content-defining event of the subject."
+        },
+        "requested": {
+          "type": "object",
+          "description": "e.g. {} for a contract, {to: 'supported'} for a claim, {to: 'valid'} for a run."
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "diff",
+            "on_approve",
+            "would_change_conclusion"
+          ],
+          "properties": {
+            "diff": {
+              "type": "string",
+              "maxLength": 1200
+            },
+            "on_approve": {
+              "type": "string",
+              "maxLength": 600
+            },
+            "would_change_conclusion": {
+              "type": "string",
+              "maxLength": 600
+            }
+          }
+        }
+      }
+    },
+    "P_authority_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request",
+        "subject_version",
+        "approval_record"
+      ],
+      "properties": {
+        "request": {
+          "$ref": "#/$defs/Ref",
+          "description": "event_id of the authority_requested event."
+        },
+        "subject_version": {
+          "$ref": "#/$defs/Ref"
+        },
+        "approval_record": {
+          "$ref": "#/$defs/ApprovalRecord"
+        }
+      }
+    },
+    "RunPlanFields": {
+      "slot": {
+        "$ref": "#/$defs/Slot"
+      },
+      "depends_on": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/Ref"
+        },
+        "description": "Upstream Runs this Run consumes (e.g. the training Run whose checkpoint it evaluates)."
+      },
+      "supersedes": {
+        "$ref": "#/$defs/Ref",
+        "description": "The Run in the same slot this one replaces (its parent)."
+      },
+      "hf_inputs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/HFRef"
+        }
+      },
+      "products": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ProductName"
+        },
+        "uniqueItems": true,
+        "description": "Outputs that must be recorded as HFRef before the Run is completed."
+      },
+      "run_kind": {
+        "enum": [
+          "dataset",
+          "training",
+          "evaluation"
+        ]
+      },
+      "parameters": {
+        "$ref": "#/$defs/Parameters"
+      },
+      "checkpoint": {
+        "$ref": "#/$defs/HFRef"
+      },
+      "archive_target": {
+        "$ref": "#/$defs/HFTarget"
+      }
+    },
+    "P_run_planned": {
+      "description": "Reserves a slot; code is bound later, at run_started.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "experiment",
+        "slot",
+        "depends_on",
+        "hf_inputs",
+        "products",
+        "run_kind",
+        "archive_target",
+        "parameters"
+      ],
+      "properties": {
+        "alias": {
+          "$ref": "#/$defs/Alias"
+        },
+        "experiment": {
+          "$ref": "#/$defs/Ref"
+        },
+        "slot": {
+          "$ref": "#/$defs/RunPlanFields/slot"
+        },
+        "depends_on": {
+          "$ref": "#/$defs/RunPlanFields/depends_on"
+        },
+        "supersedes": {
+          "$ref": "#/$defs/RunPlanFields/supersedes"
+        },
+        "hf_inputs": {
+          "$ref": "#/$defs/RunPlanFields/hf_inputs"
+        },
+        "products": {
+          "$ref": "#/$defs/RunPlanFields/products"
+        },
+        "run_kind": {
+          "$ref": "#/$defs/RunPlanFields/run_kind"
+        },
+        "parameters": {
+          "$ref": "#/$defs/RunPlanFields/parameters"
+        },
+        "checkpoint": {
+          "$ref": "#/$defs/RunPlanFields/checkpoint"
+        },
+        "archive_target": {
+          "$ref": "#/$defs/RunPlanFields/archive_target"
+        }
+      }
+    },
+    "P_run_started": {
+      "description": "Starts a planned Run (subject = its id; plan fields omitted) or creates and starts one directly (plan fields optional).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "experiment",
+        "capture"
+      ],
+      "properties": {
+        "alias": {
+          "$ref": "#/$defs/Alias"
+        },
+        "experiment": {
+          "$ref": "#/$defs/Ref"
+        },
+        "capture": {
+          "$ref": "#/$defs/RunCapture"
+        },
+        "slot": {
+          "$ref": "#/$defs/RunPlanFields/slot"
+        },
+        "depends_on": {
+          "$ref": "#/$defs/RunPlanFields/depends_on"
+        },
+        "supersedes": {
+          "$ref": "#/$defs/RunPlanFields/supersedes"
+        },
+        "hf_inputs": {
+          "$ref": "#/$defs/RunPlanFields/hf_inputs"
+        },
+        "products": {
+          "$ref": "#/$defs/RunPlanFields/products"
+        },
+        "run_kind": {
+          "$ref": "#/$defs/RunPlanFields/run_kind"
+        },
+        "parameters": {
+          "$ref": "#/$defs/RunPlanFields/parameters"
+        },
+        "checkpoint": {
+          "$ref": "#/$defs/RunPlanFields/checkpoint"
+        },
+        "archive_target": {
+          "$ref": "#/$defs/RunPlanFields/archive_target"
+        }
+      }
+    },
+    "P_run_resumed": {
+      "description": "Restart/resume the same committed code and inputs.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capture"
+      ],
+      "properties": {
+        "capture": {
+          "$ref": "#/$defs/RunCapture"
+        }
+      }
+    },
+    "DatasetCard": {
+      "description": "Dataset-wide target and evidence-backed publication snapshot; independent of how many production Runs are registered.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "description",
+        "planned_assets",
+        "samples_per_asset",
+        "published_assets",
+        "published_samples",
+        "hf",
+        "evidence",
+        "task_count"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "planned_assets": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples_per_asset": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "published_assets": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "published_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hf": {
+          "$ref": "#/$defs/HFRef"
+        },
+        "evidence": {
+          "$ref": "#/$defs/HFEvidence"
+        },
+        "task_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "DatasetResult": {
+      "description": "Evidence-backed dataset counts and pinned publication, recorded after execution without changing capture metrics or validity.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accepted_samples",
+        "published_samples",
+        "evidence"
+      ],
+      "properties": {
+        "accepted_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "published_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hf": {
+          "$ref": "#/$defs/HFRef"
+        },
+        "evidence": {
+          "$ref": "#/$defs/HFEvidence"
+        },
+        "task_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "P_run_output_recorded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "hf"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/ProductName"
+        },
+        "hf": {
+          "$ref": "#/$defs/HFRef"
+        }
+      }
+    },
+    "P_view_defined": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ExperimentKind"
+        },
+        "view": {
+          "$ref": "#/$defs/ViewValue"
+        },
+        "contract": {
+          "$ref": "#/$defs/Contract"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "dataset"
+            }
+          },
+          "required": [
+            "view"
+          ],
+          "not": {
+            "required": [
+              "contract"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "not": {
+                "const": "dataset"
+              }
+            }
+          },
+          "required": [
+            "contract"
+          ],
+          "not": {
+            "required": [
+              "view"
+            ]
+          }
+        }
+      ]
+    },
+    "P_run_positioned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot"
+      ],
+      "properties": {
+        "slot": {
+          "$ref": "#/$defs/Slot"
+        },
+        "supersedes": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "P_view_style": {
+      "description": "Display-only text for an experiment's view. Not part of the contract; needs no authority.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "row_labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "col_labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        }
+      }
+    },
+    "P_view_extended": {
+      "description": "Appends values to the view's axes (R44). Existing values, keys, match and metric never change. Needs A6 unless kind = dataset.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "add",
+        "reason",
+        "authority"
+      ],
+      "properties": {
+        "add": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "rows": {
+              "$ref": "#/$defs/ViewAxisValues"
+            },
+            "cols": {
+              "$ref": "#/$defs/ViewAxisValues"
+            },
+            "replicates": {
+              "$ref": "#/$defs/ViewAxisValues"
+            }
+          }
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "authority": {
+          "$ref": "#/$defs/Authority"
+        }
+      }
+    },
+    "P_run_completed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "exit_code",
+        "metrics",
+        "validity",
+        "capture_gaps"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "succeeded",
+            "failed"
+          ]
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "validity": {
+          "enum": [
+            "valid",
+            "unknown"
+          ],
+          "description": "valid iff status=succeeded and capture_gaps is empty."
+        },
+        "capture_gaps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "description": "Mechanical facts the wrapper could not capture."
+        },
+        "outputs": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ProductName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/HFRef"
+          },
+          "description": "Products the command reported through $RESEARCH_OUTPUTS."
+        },
+        "failure_reason": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "P_run_validity_changed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "to",
+        "reason",
+        "authority"
+      ],
+      "properties": {
+        "to": {
+          "$ref": "#/$defs/Validity"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "authority": {
+          "$ref": "#/$defs/Authority"
+        }
+      },
+      "if": {
+        "properties": {
+          "to": {
+            "const": "valid"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "authority": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "explicit",
+                  "policy"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "P_observation_created": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "experiments",
+        "statement",
+        "evidence"
+      ],
+      "properties": {
+        "alias": {
+          "$ref": "#/$defs/Alias"
+        },
+        "experiments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          },
+          "minItems": 1
+        },
+        "statement": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          },
+          "minItems": 1,
+          "description": "Run ids."
+        }
+      }
+    },
+    "ClaimEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supporting",
+        "contradicting"
+      ],
+      "properties": {
+        "supporting": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          },
+          "description": "Experiment, Run or Observation ids."
+        },
+        "contradicting": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          }
+        },
+        "context": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          },
+          "description": "Motivating scout/debug refs. Never counted as support."
+        }
+      }
+    },
+    "P_claim_proposed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "statement",
+        "scope",
+        "hypotheses",
+        "evidence"
+      ],
+      "properties": {
+        "alias": {
+          "$ref": "#/$defs/Alias"
+        },
+        "statement": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "hypotheses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          }
+        },
+        "evidence": {
+          "$ref": "#/$defs/ClaimEvidence"
+        }
+      }
+    },
+    "P_claim_revised": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason"
+      ],
+      "minProperties": 2,
+      "properties": {
+        "statement": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "hypotheses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          }
+        },
+        "evidence": {
+          "$ref": "#/$defs/ClaimEvidence"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "P_claim_status_changed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "reason",
+        "authority"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/ClaimStatus"
+        },
+        "to": {
+          "$ref": "#/$defs/ClaimStatus"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "authority": {
+          "$ref": "#/$defs/Authority"
+        },
+        "superseded_by": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "to": {
+                "enum": [
+                  "supported",
+                  "refuted"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "authority": {
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "explicit",
+                      "policy"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "to": {
+                "const": "superseded"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "superseded_by"
+            ]
+          }
+        }
+      ]
+    },
+    "P_claim_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_version",
+        "result",
+        "context_excluded"
+      ],
+      "properties": {
+        "claim_version": {
+          "$ref": "#/$defs/Ref"
+        },
+        "result": {
+          "enum": [
+            "consistent_with_evidence",
+            "inconsistent_with_evidence",
+            "insufficient_evidence"
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "maxItems": 10
+        },
+        "context_excluded": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "description": "What the verifier was not given, e.g. producer_handoff."
+        }
+      }
+    },
+    "P_decision_proposed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "decision",
+        "reason",
+        "based_on"
+      ],
+      "properties": {
+        "alias": {
+          "$ref": "#/$defs/Alias"
+        },
+        "decision": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "based_on": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          }
+        },
+        "revisit_if": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "P_decision_revoked": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "authority"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "authority": {
+          "$ref": "#/$defs/Authority"
+        }
+      }
+    },
+    "P_alias_reassigned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/Alias"
+        },
+        "to": {
+          "$ref": "#/$defs/Alias"
+        }
+      }
+    },
+    "Objects": {
+      "description": "Current records in ledger.json. Git preserves revisions; HF holds execution history.",
+      "$defs": {
+        "Common": {
+          "type": "object",
+          "required": [
+            "id",
+            "alias",
+            "version",
+            "created_at",
+            "created_by"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/Ref"
+            },
+            "alias": {
+              "$ref": "#/$defs/Alias"
+            },
+            "version": {
+              "$ref": "#/$defs/Ref"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "created_by": {
+              "$ref": "#/$defs/Actor"
+            }
+          }
+        },
+        "Hypothesis": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Objects/$defs/Common"
+            },
+            {
+              "properties": {
+                "statement": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "parent": {
+                  "$ref": "#/$defs/Ref"
+                },
+                "scope": {
+                  "$ref": "#/$defs/Scope"
+                },
+                "status": {
+                  "enum": [
+                    "open",
+                    "closed"
+                  ]
+                },
+                "resolution": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Ref"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Experiment": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Objects/$defs/Common"
+            },
+            {
+              "properties": {
+                "hypothesis": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/Ref"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "$ref": "#/$defs/ExperimentKind"
+                },
+                "mode": {
+                  "enum": [
+                    "scout",
+                    "committed"
+                  ]
+                },
+                "motivated_by": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Ref"
+                  }
+                },
+                "contract": {
+                  "$ref": "#/$defs/Contract"
+                },
+                "authority": {
+                  "$ref": "#/$defs/Authority",
+                  "description": "derived: authority valid for the current contract version."
+                },
+                "status": {
+                  "enum": [
+                    "draft",
+                    "awaiting_authority",
+                    "ready",
+                    "running",
+                    "completed",
+                    "abandoned"
+                  ],
+                  "description": "derived. scout starts at ready."
+                },
+                "post_hoc_amended": {
+                  "type": "boolean",
+                  "description": "derived"
+                },
+                "legacy": {
+                  "type": "boolean",
+                  "description": "marked by experiment_marked_legacy; excluded from views"
+                },
+                "dataset_card": {
+                  "$ref": "#/$defs/DatasetCard"
+                },
+                "view_style": {
+                  "type": "object",
+                  "description": "latest experiment_view_styled payload"
+                },
+                "view": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ViewSpec"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "derived: the contract's (or a dataset's) view plus every experiment_view_extended"
+                },
+                "view_extended": {
+                  "type": "object",
+                  "description": "derived: axis -> values appended since the view was last set"
+                },
+                "decision_rule_result": {
+                  "enum": [
+                    "met",
+                    "not_met",
+                    "inconclusive"
+                  ]
+                },
+                "runs": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Ref"
+                  },
+                  "description": "derived"
+                }
+              }
+            }
+          ]
+        },
+        "Run": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Objects/$defs/Common"
+            },
+            {
+              "properties": {
+                "dataset_result": {
+                  "$ref": "#/$defs/DatasetResult"
+                },
+                "experiment": {
+                  "$ref": "#/$defs/Ref"
+                },
+                "capture": {
+                  "$ref": "#/$defs/RunCapture"
+                },
+                "status": {
+                  "enum": [
+                    "planned",
+                    "running",
+                    "completed",
+                    "interrupted"
+                  ],
+                  "description": "Exit 0 is completed once every declared product is recorded; nonzero exit or run_interrupted is interrupted."
+                },
+                "exit_code": {
+                  "type": "integer"
+                },
+                "slot": {
+                  "$ref": "#/$defs/Slot"
+                },
+                "depends_on": {
+                  "type": "array"
+                },
+                "supersedes": {
+                  "$ref": "#/$defs/Ref"
+                },
+                "superseded_by": {
+                  "$ref": "#/$defs/Ref",
+                  "description": "derived: the child Run"
+                },
+                "hf_inputs": {
+                  "type": "array"
+                },
+                "products": {
+                  "type": "array"
+                },
+                "outputs": {
+                  "type": "object"
+                },
+                "needs_rerun": {
+                  "type": "boolean",
+                  "description": "derived: invalid itself, or a dependency needs a rerun"
+                },
+                "deprecation_reason": {
+                  "type": "string",
+                  "description": "derived: reason of the latest change to invalid",
+                  "maxLength": 4096
+                },
+                "metrics": {
+                  "type": "object"
+                },
+                "validity": {
+                  "$ref": "#/$defs/Validity"
+                },
+                "run_kind": {
+                  "$ref": "#/$defs/RunPlanFields/run_kind"
+                },
+                "parameters": {
+                  "$ref": "#/$defs/RunPlanFields/parameters"
+                },
+                "checkpoint": {
+                  "$ref": "#/$defs/RunPlanFields/checkpoint"
+                },
+                "archive_target": {
+                  "$ref": "#/$defs/RunPlanFields/archive_target"
+                },
+                "evidence": {
+                  "$ref": "#/$defs/HFEvidence"
+                },
+                "archive_status": {
+                  "enum": [
+                    "pending",
+                    "uploaded"
+                  ]
+                },
+                "attempt": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "Observation": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Objects/$defs/Common"
+            },
+            {
+              "properties": {
+                "experiments": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Ref"
+                  }
+                },
+                "statement": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Ref"
+                  }
+                },
+                "status": {
+                  "enum": [
+                    "active",
+                    "retracted"
+                  ]
+                },
+                "evidence_degraded": {
+                  "type": "boolean",
+                  "description": "derived"
+                }
+              }
+            }
+          ]
+        },
+        "Claim": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Objects/$defs/Common"
+            },
+            {
+              "properties": {
+                "statement": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "scope": {
+                  "$ref": "#/$defs/Scope"
+                },
+                "hypotheses": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Ref"
+                  }
+                },
+                "evidence": {
+                  "$ref": "#/$defs/ClaimEvidence"
+                },
+                "status": {
+                  "$ref": "#/$defs/ClaimStatus"
+                },
+                "superseded_by": {
+                  "$ref": "#/$defs/Ref"
+                },
+                "verified": {
+                  "type": "boolean",
+                  "description": "derived: a consistent_with_evidence verification exists for the current version."
+                },
+                "evidence_degraded": {
+                  "type": "boolean",
+                  "description": "derived: some run in the evidence closure is not valid."
+                },
+                "support_broken": {
+                  "type": "boolean",
+                  "description": "derived: remaining valid evidence no longer satisfies AGENTS.md R27."
+                }
+              }
+            }
+          ]
+        },
+        "Decision": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Objects/$defs/Common"
+            },
+            {
+              "properties": {
+                "decision": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "based_on": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Ref"
+                  }
+                },
+                "revisit_if": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "status": {
+                  "enum": [
+                    "proposed",
+                    "made",
+                    "revoked"
+                  ]
+                },
+                "authority": {
+                  "$ref": "#/$defs/Authority"
+                },
+                "basis_degraded": {
+                  "type": "boolean",
+                  "description": "derived"
+                }
+              }
+            }
+          ]
+        },
+        "Policy": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Objects/$defs/Common"
+            },
+            {
+              "properties": {
+                "scope": {
+                  "$ref": "#/$defs/P_policy_granted/properties/scope"
+                },
+                "permits": {
+                  "$ref": "#/$defs/P_policy_granted/properties/permits"
+                },
+                "constraints": {
+                  "type": "object"
+                },
+                "require_verification": {
+                  "type": "boolean"
+                },
+                "expires_at": {
+                  "$ref": "#/$defs/Timestamp"
+                },
+                "approval_record": {
+                  "$ref": "#/$defs/ApprovalRecord"
+                },
+                "active": {
+                  "type": "boolean",
+                  "description": "derived: not revoked and not expired."
+                }
+              }
+            }
+          ]
+        },
+        "PendingAuthority": {
+          "description": "Row of the generated `research pending-authority` view. Never stored.",
+          "type": "object",
+          "required": [
+            "request",
+            "subject_alias",
+            "scope",
+            "summary",
+            "stale"
+          ],
+          "properties": {
+            "request": {
+              "$ref": "#/$defs/Ref"
+            },
+            "subject_alias": {
+              "$ref": "#/$defs/Alias"
+            },
+            "scope": {
+              "$ref": "#/$defs/AuthorityScope"
+            },
+            "summary": {
+              "type": "object"
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "true if subject_version is no longer the current version."
+            }
+          }
+        },
+        "Project": {
+          "allOf": [
+            {
+              "type": "object",
+              "required": [
+                "id",
+                "version",
+                "created_at",
+                "created_by"
+              ],
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/Ref"
+                },
+                "version": {
+                  "$ref": "#/$defs/Ref"
+                },
+                "created_at": {
+                  "$ref": "#/$defs/Timestamp"
+                },
+                "created_by": {
+                  "$ref": "#/$defs/Actor"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "research_goal",
+                "default_primary_metric",
+                "default_baseline",
+                "hard_constraints",
+                "approval_record"
+              ],
+              "properties": {
+                "research_goal": {
+                  "$ref": "#/$defs/ProvenancedValue"
+                },
+                "default_primary_metric": {
+                  "$ref": "#/$defs/ProvenancedValue"
+                },
+                "default_baseline": {
+                  "$ref": "#/$defs/ProvenancedValue"
+                },
+                "hard_constraints": {
+                  "$ref": "#/$defs/ProvenancedValue",
+                  "description": "value: array of strings."
+                },
+                "approval_record": {
+                  "$ref": "#/$defs/ApprovalRecord"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "Handoff": {
+      "description": "WORKSTATE/handoff/<HS-alias>.json. Zero epistemic weight. Never referenced by any event.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "alias",
+        "created_by",
+        "created_at",
+        "role",
+        "scope",
+        "resume_objective",
+        "active_refs",
+        "completed",
+        "pending",
+        "working_assumptions",
+        "constraints"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Ulid"
+        },
+        "alias": {
+          "$ref": "#/$defs/Alias"
+        },
+        "created_by": {
+          "$ref": "#/$defs/Actor"
+        },
+        "created_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "role": {
+          "$ref": "#/$defs/Role"
+        },
+        "scope": {
+          "type": "object",
+          "properties": {
+            "hypothesis": {
+              "$ref": "#/$defs/Ref"
+            },
+            "experiment": {
+              "$ref": "#/$defs/Ref"
+            }
+          }
+        },
+        "resume_objective": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "active_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          }
+        },
+        "completed": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "description": "Mechanical work done since start."
+        },
+        "pending": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "description": "Mechanical work remaining."
+        },
+        "working_assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "description": "Unverified. Weight 0."
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        }
+      }
+    },
+    "HFEvidence": {
+      "description": "A pinned Hugging Face object: repo plus the 40-hex commit revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "repo",
+        "revision",
+        "path"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "model",
+            "dataset"
+          ]
+        },
+        "repo": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "maxLength": 4096
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "maxLength": 4096
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\x00-\\x1f\\\\]+$",
+          "maxLength": 512
+        }
+      }
+    },
+    "HFTarget": {
+      "description": "A pinned Hugging Face object: repo plus the 40-hex commit revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "repo"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "model",
+            "dataset"
+          ]
+        },
+        "repo": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "maxLength": 4096
+        }
+      }
+    },
+    "Parameters": {
+      "type": "object",
+      "maxProperties": 20,
+      "propertyNames": {
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean",
+          "null"
+        ],
+        "maxLength": 512
+      }
+    },
+    "P_run_archived": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence",
+        "attempt"
+      ],
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/HFEvidence"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "Ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "project_id",
+        "records",
+        "kinds",
+        "events",
+        "answers",
+        "consumed",
+        "verifications",
+        "last_event_id",
+        "archives"
+      ],
+      "properties": {
+        "format": {
+          "const": 1
+        },
+        "project_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "records": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/Ref"
+          },
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "kinds": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "project",
+              "hypothesis",
+              "experiment",
+              "run",
+              "observation",
+              "claim",
+              "decision",
+              "policy"
+            ]
+          }
+        },
+        "events": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Event"
+          }
+        },
+        "answers": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "consumed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ref"
+          },
+          "uniqueItems": true
+        },
+        "verifications": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "maxItems": 1,
+            "items": {
+              "$ref": "#/$defs/Event"
+            }
+          }
+        },
+        "last_event_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "archives": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/HFEvidence"
+          }
+        }
+      }
+    }
+  }
+}

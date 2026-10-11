@@ -1,0 +1,223 @@
+{
+ "design": "docs/design/vla_harness_v1.md §3.2",
+ "generated_by": "scripts/make_split.py",
+ "benchmark": "RoboDojo",
+ "config_name": "arx_x5",
+ "layout_root": "/home/ryan/Documents/RoboDojo/Assets/Eval_Layout/RoboDojo/arx_x5",
+ "layout_source_if_missing": "dataset=RoboDojo-Benchmark/RoboDojo (Assets/Eval_Layout/RoboDojo/arx_x5/<seed>/<task>_<n>.json)",
+ "names_sha256": {
+  "0": "00e78680b99e2c2e4a0c4c8d62f87ac62db15b153d9690edcbcff2b0b2f9c224",
+  "1": "00e78680b99e2c2e4a0c4c8d62f87ac62db15b153d9690edcbcff2b0b2f9c224",
+  "2": "00e78680b99e2c2e4a0c4c8d62f87ac62db15b153d9690edcbcff2b0b2f9c224"
+ },
+ "tasks": {
+  "dev": [
+   "stack_bowls",
+   "put_bottles_into_dustbin"
+  ],
+  "heldout": [
+   "build_tower",
+   "make_kong"
+  ],
+  "reserve": [
+   "fold_clothes"
+  ]
+ },
+ "missing_tasks": [
+  "build_tower",
+  "fold_clothes",
+  "make_kong",
+  "put_bottles_into_dustbin",
+  "stack_bowls"
+ ],
+ "other_tasks_present": {
+  "plug_in_charger": {
+   "0": 55,
+   "1": 55,
+   "2": 55
+  }
+ },
+ "note": "Only file names were listed; no layout content was read. layout_idx = position in the numerically sorted <task>_<n>.json list (RoboDojo seed_manager.init_eval).",
+ "splits": {
+  "E": {
+   "seed": 0,
+   "range": [
+    0,
+    50
+   ],
+   "tasks": {
+    "stack_bowls": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "put_bottles_into_dustbin": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    }
+   },
+   "visible_to": "P6 traces + official scores; memory accumulates here",
+   "when": "development"
+  },
+  "V": {
+   "seed": 1,
+   "range": [
+    0,
+    50
+   ],
+   "tasks": {
+    "stack_bowls": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "put_bottles_into_dustbin": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    }
+   },
+   "visible_to": "P5 only; P6 receives accept/reject bit",
+   "when": "once per candidate"
+  },
+  "AA": {
+   "same_layouts_as": "V",
+   "seed": 1,
+   "range": [
+    0,
+    50
+   ],
+   "reps": 3,
+   "tasks": {
+    "stack_bowls": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "put_bottles_into_dustbin": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    }
+   },
+   "visible_to": "P5; yields epsilon",
+   "when": "once in M0, once in M1"
+  },
+  "T": {
+   "seeds": {
+    "dev": [
+     2
+    ],
+    "heldout": [
+     0,
+     1,
+     2
+    ]
+   },
+   "range": [
+    0,
+    50
+   ],
+   "tasks": {
+    "stack_bowls@2": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "put_bottles_into_dustbin@2": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "build_tower@0": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "build_tower@1": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "build_tower@2": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "make_kong@0": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "make_kong@1": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "make_kong@2": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    }
+   },
+   "visible_to": "looked at once",
+   "when": "end of M3"
+  },
+  "spare": {
+   "seed": 0,
+   "range": [
+    50,
+    55
+   ],
+   "tasks": {
+    "stack_bowls": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "put_bottles_into_dustbin": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "build_tower": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "make_kong": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    },
+    "fold_clothes": {
+     "status": "missing",
+     "layout_idx": [],
+     "file_num": [],
+     "n": 0
+    }
+   },
+   "visible_to": "anyone (smoke only)",
+   "when": "any"
+  }
+ }
+}

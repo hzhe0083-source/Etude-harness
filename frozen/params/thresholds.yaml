@@ -1,0 +1,53 @@
+# Frozen thresholds (design §1, §3.0 "验证器阈值: 冻结，只收紧", §3.5 threat table).
+# Every entry: value, direction: tighten_only, tighter: higher|lower (which way is
+# stricter), unit, used_by. Loosening any entry is cheating unless P5 proves the
+# miss rate does not rise (design §3.5). Loader: etude.core.config.load_thresholds().
+# Gripper-width units follow robot_manager.get_end_effector_real_val (to be
+# calibrated in M0; design §8.4 #4).
+version: 1
+thresholds:
+  # ---- perceive / detector (design §4 MCP perceive) ----
+  perceive.conf_min:            {value: 0.6,   direction: tighten_only, tighter: higher, unit: prob,   used_by: perceive}
+  # ---- verifier (design §4 判决 JSON) ----
+  verifier.pred_conf_min:       {value: 0.6,   direction: tighten_only, tighter: higher, unit: prob,   used_by: verifier}   # below -> InsufficientEvidence
+  verifier.views_agree_min:     {value: 2,     direction: tighten_only, tighter: higher, unit: count,  used_by: verifier}   # 两视角一致
+  verifier.max_inspect_per_node: {value: 1,    direction: tighten_only, tighter: lower,  unit: count,  used_by: verifier}
+  gripper.holding_width_min:    {value: 0.012, direction: tighten_only, tighter: higher, unit: m,      used_by: verifier}   # closed cmd but width > this -> holding (Spotter App. B 12 mm)
+  gripper.closed_cmd_max:       {value: 0.2,   direction: tighten_only, tighter: lower,  unit: norm,   used_by: verifier}   # ee_joint_state echo <= this counts as "close commanded"
+  gripper.open_cmd_min:         {value: 0.8,   direction: tighten_only, tighter: higher, unit: norm,   used_by: verifier}   # cf. is_all_gripper_open(open_threshold=0.8)
+  lift.min_dz_m:                {value: 0.05,  direction: tighten_only, tighter: higher, unit: m,      used_by: verifier}   # target_lifted default
+  rgb_diff.moved_min:           {value: 0.08,  direction: tighten_only, tighter: higher, unit: frac,   used_by: verifier}   # mean |Δ|/255 inside bbox
+  rgb_diff.not_moved_max:       {value: 0.03,  direction: tighten_only, tighter: lower,  unit: frac,   used_by: verifier}
+  box.on_overlap_min:           {value: 0.5,   direction: tighten_only, tighter: higher, unit: frac,   used_by: verifier}   # target_on: x-overlap of A over B
+  box.in_containment_min:       {value: 0.7,   direction: tighten_only, tighter: higher, unit: frac,   used_by: verifier}   # target_in: area(A∩B)/area(A)
+  arm_home.joint_tol_rad:       {value: 0.1,   direction: tighten_only, tighter: lower,  unit: rad,    used_by: verifier}
+  safety.joint_vel_max_rad_s:   {value: 3.0,   direction: tighten_only, tighter: lower,  unit: rad/s,  used_by: verifier}   # SafetyStop
+  # ---- executors / stop rules (design §3.3) ----
+  stall.joint_delta_max_rad:    {value: 0.01,  direction: tighten_only, tighter: lower,  unit: rad,    used_by: executor}   # chunk counts as stalled if max |Δq| below
+  ee_move.max_step_m:           {value: 0.02,  direction: tighten_only, tighter: lower,  unit: m,      used_by: executor}   # per-action translation cap
+  ee_move.pos_tol_m:            {value: 0.01,  direction: tighten_only, tighter: lower,  unit: m,      used_by: executor}
+  ee_move.center_tol_px:        {value: 20,    direction: tighten_only, tighter: lower,  unit: px,     used_by: executor}   # wrist-view centering
+  ee_move.ik_progress_min_m:    {value: 0.002, direction: tighten_only, tighter: higher, unit: m,      used_by: executor}   # below after a step -> Blocked (IK silently dropped)
+  ee_move.max_actions_per_chunk: {value: 10,   direction: tighten_only, tighter: lower,  unit: count,  used_by: executor}  # k
+  # ---- budgets (design §1, §3.5, §7) ----
+  budget.vlm_calls_per_episode: {value: 12,    direction: tighten_only, tighter: lower,  unit: count,  used_by: adapter}
+  # added in review round 1 (needs human sign-off): every assistant turn of pi is one VLM request; a
+  # planning call may loop on observe/inspect, so the 12-call cap alone does not bound requests (§3.5 超调用预算).
+  budget.vlm_requests_per_episode: {value: 48, direction: tighten_only, tighter: lower,  unit: count,  used_by: planner}
+  budget.max_tool_calls_per_plan: {value: 40,  direction: tighten_only, tighter: lower,  unit: count,  used_by: planner}  # guard.ts clamps ETUDE_MAX_TOOL_CALLS to this
+  budget.max_nodes:             {value: 8,     direction: tighten_only, tighter: lower,  unit: count,  used_by: planner}
+  budget.memory_top_k:          {value: 3,     direction: tighten_only, tighter: lower,  unit: count,  used_by: memory}
+  deploy.request_timeout_s:     {value: 1800,  direction: tighten_only, tighter: lower,  unit: s,      used_by: deploy}
+  # ---- gates / scorer (design §3.1, §3.3, §5, §6) ----
+  gate.mcnemar_p_max:           {value: 0.05,  direction: tighten_only, tighter: lower,  unit: prob,   used_by: evolution}
+  gate.eps_min:                 {value: 4,     direction: tighten_only, tighter: higher, unit: episodes, used_by: evolution} # COAP floor
+  gate.eps_max:                 {value: 15,    direction: tighten_only, tighter: lower,  unit: episodes, used_by: evolution} # above -> enlarge V to 150
+  gate.L1_max_episodes:         {value: 5,     direction: tighten_only, tighter: lower,  unit: count,  used_by: evolution}
+  gate.L2_max_episodes:         {value: 20,    direction: tighten_only, tighter: lower,  unit: count,  used_by: evolution}
+  gate.L2_max_failures:         {value: 1,     direction: tighten_only, tighter: lower,  unit: count,  used_by: evolution}
+  gate.diff_max_lines:          {value: 40,    direction: tighten_only, tighter: lower,  unit: lines,  used_by: evolution}
+  gate.diff_max_rules:          {value: 3,     direction: tighten_only, tighter: lower,  unit: count,  used_by: evolution}
+  gate.stop_after_rejects:      {value: 3,     direction: tighten_only, tighter: lower,  unit: count,  used_by: evolution}
+  gate.max_V_reuse:             {value: 6,     direction: tighten_only, tighter: lower,  unit: count,  used_by: evolution}
+  scorer.unstable_rate_review:  {value: 0.05,  direction: tighten_only, tighter: lower,  unit: frac,   used_by: scorer}
+  verifier.fpr_max:             {value: 0.05,  direction: tighten_only, tighter: lower,  unit: frac,   used_by: experiments}

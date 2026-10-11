@@ -1,0 +1,29 @@
+{
+  "rows": {
+    "key": "task",
+    "values": [
+      "stack_bowls",
+      "put_bottles_into_dustbin",
+      "build_tower",
+      "make_kong"
+    ]
+  },
+  "cols": {
+    "key": "condition",
+    "values": [
+      "h1",
+      "h1_nstar"
+    ]
+  },
+  "cell": {
+    "match": {},
+    "metric": "success_rate",
+    "replicates": {
+      "key": "seed",
+      "values": [
+        "0",
+        "1"
+      ]
+    }
+  }
+}

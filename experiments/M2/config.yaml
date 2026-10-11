@@ -1,0 +1,80 @@
+# M2 — 条件 3：记忆回路（节点序列库）开启（docs/design/vla_harness_v1.md §5 M2 列、§3.1 记忆回路、§3.2、§6 条件 3）
+milestone: M2
+condition: 条件 3
+design_refs: ["§5 M2", "§3.1 记忆回路", "§3.2", "§3.3 记忆写入", "§6 条件 3"]
+
+tasks:
+  dev: [stack_bowls, put_bottles_into_dustbin]
+  heldout: []                         # 记忆只在 E（开发任务 seed 0）积累，留出任务无条目
+step_lim: {stack_bowls: 800, put_bottles_into_dustbin: 700}
+
+splits_file: experiments/splits.json
+eval_num: 50
+
+memory:
+  accumulate_on: E                    # 开发任务 seed 0 布局 0–49
+  admission: "离线官方 judge 成功 ∧ 全节点 Pass ∧ schema 通过（无数值 target）"   # §3.1 门
+  dedupe: "同任务同指令哈希，保留更短者"
+  writer: memory/writer.py（离线，无 LLM）
+  frozen_during_eval: true            # §8.3：评测期记忆冻结，哈希审计
+  top_k: 3                            # frozen budget.memory_top_k
+  source_runs: "M1 h1 seed 0（E）回合 + 其 P5 官方判定"
+
+conditions:
+  key: condition
+  values: [h2, shuffled]
+  h2:
+    harness: "H1 + 记忆只读检索（memory_lookup，top-3）"
+    seeds: [0, 1]                     # §5："E 上积累 → seed 0/1 评"；seed 0 为样本内，仅记录
+  shuffled:
+    harness: "H1 + 打乱记忆：检索结果换成另一开发任务的条目（换任务）"
+    method: swap_task                 # §5 允许"换任务或打乱节点顺序"，预注册选换任务；node_order 为备选，不另跑
+    seeds: [0, 1]
+
+baseline:
+  ref: "M1 cell condition=h1（同任务、同 seed、同布局配对）"
+
+analysis:
+  primary: "SR2(seed1) − SR1(seed1) ≥ ε（ε 取 M1 A/A）"
+  control: "打乱记忆 ≤ SR1 + δ（δ = δ_AA，M1 A/A 的最大成对差）"
+  leak_check: "§6 条件 3：开发任务 seed 2 上 SR2 − SR1 < −δ_AA → 序列泄漏布局信息，回查 schema（seed 2 属于 T，在 M3 末与 T 同次查看）"
+  random_layout_check: "Gen 任务 random 半场单列 SR（坐标已换查询的检查，§7）"
+
+eval:
+  bench: RoboDojo
+  env_cfg: arx_x5
+  action_type_label: ee
+  eval_batch: false
+  num_envs: 1
+  request_timeout_s: 1800
+
+model:
+  policy: pi05
+  checkpoint_hf: "dataset=RoboDojo-Benchmark/RoboDojo@35efbc7dedfdbeeb6e95fb749bd885d73d483e41:ckpt/RoboDojo/Pi_05/RoboDojo-sim-arx_x5-joint-0/59999"
+  planner: claude-sonnet-5-5
+  editor: null                        # 记忆回路无 LLM 编辑者
+  vlm_calls_per_episode_max: 12
+
+budget:
+  episodes:
+    total_cap: 500                    # §5："约 500 回合"
+    plan: "h2 2 任务×2 seed×50 = 200；shuffled 2 任务×2 seed×50 = 200；余 100 给补充 E 积累"
+  wall_hours_cap: 33                  # §5："≈ 33 h"
+  vlm_usd_cap: 150                    # §5："约 $150"
+
+checkpoints_to_clear:                 # §5 M2 卡点
+  - 记忆序列在 random 布局上可执行（坐标已换查询）
+
+metrics: [success_rate, successes, trials, score, memory_hit_rate, vlm_calls, vlm_tokens, wall_s_per_episode]
+
+research:
+  intent: "记忆回路（E 上积累的节点序列库，评测期冻结）相对 H1 的增益，及打乱记忆对照"
+  decision_rule: "SR2(seed1) − SR1(seed1) ≥ ε；打乱记忆 ≤ SR1 + δ"
+  baseline: "M1 cell condition=h1（同任务同 seed 同布局）"
+  experiment: null
+  kind: main
+  metric: success_rate
+  view: experiments/M2/view.json
+  slot_keys: [task, condition, seed]
+  checkpoint_env: RESEARCH_CHECKPOINT  # 见 M0/config.yaml
+  entry: scripts/run_harness.sh

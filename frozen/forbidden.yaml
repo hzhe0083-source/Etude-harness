@@ -1,0 +1,171 @@
+# Forbidden-read policy, v1 (design §2 "边界落地", §3.5). Frozen.
+# Consumed by the AST checker (frozen/ast_check.py / etude.frozen) over deploy.py,
+# all etude/ code and evolvable/. Loader: etude.core.config.load_forbidden().
+version: 1
+
+# Attribute / call names that must never appear (ast.Attribute.attr, ast.Name.id,
+# getattr(..., "<name>") string constants, and string literals passed to getattr/hasattr).
+deny_names:
+  # PhysicalRSI PRIVILEGED_ATTRIBUTES (11)
+  - scene_manager
+  - layout_manager
+  - reward_manager
+  - get_label_pose
+  - get_instance_pose
+  - get_instance_metadata
+  - get_scene_object
+  - get_functional_points
+  - env_seeds
+  - end_flag
+  - take_action_cnt
+  # ours
+  - success
+  - mark_env_unstable
+  # defense in depth: RoboDojo EvalEnv judge / seed bookkeeping (eval_env.py 266130a)
+  - success_nums
+  - fail_nums
+  - total_score
+  - eval_result
+  - seed_manager
+  - current_env_seed_map
+  - unstable_envs
+  - abandoned_seeds
+  - _align_layout_success
+  - get_seeds_for_envs
+  - persist_resume_manifest
+
+# Dotted attribute chains that are denied even though a prefix is allowed.
+deny_attr_chains:
+  - robot_manager.planner
+
+# Path fragments / globs that code must not open or reference in string literals.
+deny_paths:
+  - "Assets/"
+  - "Eval_Layout"
+  - "task/*/config/*.yml"
+  - "_result.json"
+  - "summarize_result.py"
+  - "gate/V/"
+  - "gate/T/"
+  - "scorer/audit/"
+  - "evolution/lineage/"   # legacy receipt location (receipts now default outside the repo)
+
+# Also denied: any attribute read off the robot handle except passing it back to
+# get_end_effector_real_val (AST checker: no ast.Attribute on the returned handle).
+# deploy.py: explicit allow-list of TASK_ENV attributes (design §2). Any other
+# TASK_ENV.<attr> access is rejected.
+deploy_task_env_allow:
+  - get_obs
+  - take_action
+  - is_episode_end
+  - get_running_env_idx_list
+  - get_obs_batch
+  - take_action_batch
+  - step_lim
+  - robot_manager.get_end_effector_real_val
+
+# Extensions beyond design §2 that still need human sign-off. ast_check accepts them but
+# reports [pending_signoff] (a warning; `--strict` makes it an error). Sign-off = a human
+# moves the entry into deploy_task_env_allow above (Research OS Decision).
+# get_end_effector_real_val(robot, env_idx_list) takes a robot handle; this getter returns it by
+# arm name ("left_arm"/"right_arm"). ast_check only accepts the handle as the direct first
+# argument of robot_manager.get_end_effector_real_val (never bound, never read).
+# Alternative if rejected: robot_manager.robot_list (exposes more).
+deploy_task_env_pending_signoff:
+  - robot_manager.get_robot_by_arm_name
+
+# deploy.py may import only these top-level packages (no sys/inspect/gc/importlib/builtins).
+deploy_import_allow: [numpy, math]
+
+# Run-time code (P2 policy server, deploy.py) may not import the P5 scorer or frozen
+# internals (it could read earlier episodes' official results). Constant
+# importlib.import_module strings are checked too.
+deny_imports:
+  modules: [etude.scorer, scorer, etude.frozen]
+  except: [etude.frozen.leakage, etude.frozen.ast_check]
+  scope:
+    - deploy/XPolicyLab/policy/Etude
+    - etude/adapter
+    - etude/runner.py
+    - etude/executor
+    - etude/verifier
+    - etude/perceive
+    - etude/planner
+    - etude/mcp
+    - etude/memory
+    - etude/backends
+    - etude/trace
+    - etude/core
+    - etude/fakes.py
+
+# Observation content the harness may use (design §2 "允许").
+allowed_obs:
+  vision: [cam_head, cam_left_wrist, cam_right_wrist]
+  state: [left_arm_joint_state, left_ee_pose, left_ee_joint_state, right_arm_joint_state, right_ee_pose, right_ee_joint_state]
+  additional_info: [frequency, step_lim, gripper_width_measured]
+
+# Files the P6 editor may write (design §3.1 白名单). Everything else is read-only to it.
+evolvable_whitelist:
+  - evolvable/prompts/planner.md
+  - evolvable/rules/recovery.yaml
+  - evolvable/skills/SKILL.md
+
+# Leakage regexes (design §3.5 "写死坐标 / seed / 任务名"); applied to evolvable/
+# diffs, memory entries and submitted sequences (perceive queries, instructions).
+# Consumer: etude.frozen.leakage.LeakageScanner (adds nothing on top of these keys
+# except the 42-name list it is generated from). Postconditions are not scanned
+# (they carry schema-checked threshold literals such as target_lifted(>0.05m)).
+leakage_regex:
+  # all 42 RoboDojo tasks (scripts/internal/summarize_result.py DIMENSIONS) + *_random variants.
+  # The scanner also matches them after normalising the text (camelCase -> snake, spaces and
+  # hyphens -> "_"), so "stack bowls random", "stack-bowls" and "StackBowls" are caught too.
+  task_names: '(?i)\b(align_blocks|arrange_largest_number|build_tower|classify_objects|classify_objects_by_language|cover_blocks|deposit_coin|fasten_screws|fill_egg_holder|fill_pen_holder|fold_clothes|general_pickup|hang_mugs|imitate_sorting_sequence|insert_key|insert_tubes|make_kong|make_toast|match_and_pick_from_conveyor|organize_table|pack_objects_into_box|pick_from_conveyor_by_image|play_stacking_toy|play_tic_tac_toe|play_xylophone|plug_in_charger|pour_balls_into_vase|pour_by_language|pour_liquid_into_cup|press_by_number|push_t|put_bottles_into_dustbin|solve_equation|sort_nesting_dolls_by_size|stack_blocks|stack_blocks_by_language|stack_bowls|store_laptop_and_headphones|store_tools_in_toolbox|swap_blocks|swap_t|sweep_blocks)(_random)?\b'
+  # "layout 7", "seed=1", "episode#3", "ep7", "layout no. 7", "no. 7", "seventh layout", "7th seed"
+  layout_ids: '(?i)(\b(layout|seed|episode|env_seed|eval_layout|ep|scene|config|variant)\s*(no\.?|number|num|id|#)?[\s_#:=.-]*\d+|\bno\.?\s*\d+|\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|[a-z]+teenth|[a-z]+tieth|\d+(st|nd|rd|th))[\s-]+(layout|seed|episode|scene|setup|config|configuration|variant)s?\b)'
+  coordinates: '\[\s*-?\d+(\.\d+)?\s*(,\s*-?\d+(\.\d+)?\s*){1,6}\]|\(\s*-?\d+(\.\d+)?\s*(,\s*-?\d+(\.\d+)?\s*){2,6}\)'
+  float_literals: '(?<![\w.])-?\d+\.\d{2,}(?![\w.])'
+  # "0.3 m", "31 cm", "-5 mm", "15 deg" (target_lifted(>0.05m) is masked by leakage_allow)
+  distances: '(?i)(?<![\w.])[-+]?\d+(\.\d+)?\s*(m|cm|mm|meters?|metres?|centimet(er|re)s?|millimet(er|re)s?|inch(es)?|deg|degrees?|rad|radians?)(?![\w])'
+  # "x=0.3", "y: -0.2"
+  axis_values: '(?i)(?<![\w.])[xyz]\s*[=:]\s*[-+]?\.?\d'
+  layout_files: '(?i)(eval_layout|_result\.json|_resume_[\w-]*\.json|\b\d{1,4}\.json\b|task/[\w*]+/config/)'
+  # node instruction / perceive / postcondition fields only (not evolvable prose): any digit
+  # left after leakage_allow masking (the target_lifted threshold) is rejected.
+  node_digits: '\d+'
+
+# Matches of these regexes are removed from the text before leakage scanning
+# (configurable allowlist; tighten-only like thresholds: removing entries is fine,
+# adding one needs human sign-off).
+leakage_allow:
+  - 'target_lifted\(>\d*\.\d+m\)'
+
+# Default scope of `python -m etude.frozen.ast_check` with no paths (design §2:
+# deploy.py, P2 code, evolvable/; plus memory and planner config).
+# exempt: P5 scorer (the only reader of official results) and the checker itself,
+# whose sources necessarily spell out the denied names and paths.
+# exempt: scripts/make_split.py is the offline split builder (it lists Eval_Layout file names;
+# design §3.2), run by a human, never by P2/P6.
+ast_scan:
+  include:
+    - deploy/XPolicyLab/policy/Etude
+    - etude
+    - evolvable
+    - memory_db
+    - planner
+    - scripts
+  exempt:
+    - etude/scorer
+    - etude/frozen
+    - scorer
+    - scripts/make_split.py
+  # "<path>::<qualname glob>": the only places where getattr/__getattribute__ with a
+  # non-constant name, getattr aliasing, vars()/__dict__ or similar reflection is allowed.
+  reflection_allow:
+    - "etude/adapter/xpl_model.py::import_object"            # getattr(module, part) for configured etude.* plug-ins
+    - "etude/adapter/demo.py::LocalModelClient.call"          # mirrors XPolicyLab model_server dispatch by func_name
+    - "etude/fakes.py::FakeRobotManager.__getattribute__"    # fake env: records allow-list accesses
+    - "etude/fakes.py::FakeTaskEnv.__getattribute__"
+    - "etude/executor/servo_demo.py::ServoDemoEnv.*"         # fake env (P4 side) internals
+    - "scripts/demo_fake_episode.py::PickWorld.*"             # fake env (P4 side) internals
+  # parameter names treated as the RoboDojo env handle in deploy.py files
+  deploy_env_names: [TASK_ENV]

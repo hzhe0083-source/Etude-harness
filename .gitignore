@@ -10,3 +10,15 @@ dist/
 runs/
 checkpoints/
 datasets/
+traces/*
+!traces/.gitkeep
+memory_db/*.jsonl
+memory_db/**/*.jsonl
+research/WORK
+research/WORKSTATE
+research/ledger.json.lock
+research/.lock
+evolution/worktrees/*
+!evolution/worktrees/.gitkeep
+evolution/lineage/*
+!evolution/lineage/.gitkeep

@@ -1,0 +1,29 @@
+{
+  "rows": {
+    "key": "task",
+    "values": [
+      "stack_bowls",
+      "put_bottles_into_dustbin"
+    ]
+  },
+  "cols": {
+    "key": "condition",
+    "values": [
+      "h1"
+    ]
+  },
+  "cell": {
+    "match": {
+      "split": "V"
+    },
+    "metric": "success_rate",
+    "replicates": {
+      "key": "rep",
+      "values": [
+        "1",
+        "2",
+        "3"
+      ]
+    }
+  }
+}

@@ -1,0 +1,102 @@
+# Etude policy for XPolicyLab / RoboDojo. Design §2 (P2/P4), §5 M0, §8.1 items 5, 7 and 8.
+# Fields follow policy/Pi_05/deploy.yml. setup_eval_policy_server.sh appends the CLI
+# overrides (port, task_name, seed, ...) plus ETUDE_* environment overrides (see README.md).
+
+# Basic experiment configuration
+policy_name: Etude
+protocol: ws
+host: localhost
+bench_name: null
+task_name: null
+env_cfg_type: null
+seed: null
+# The harness blocks inside get_action at node boundaries (design §2/§3.3).
+# Batch eval would route to get_action_batch, so it is disabled. deploy.py
+# eval_one_episode_batch raises NotImplementedError.
+eval_batch: false
+
+# Client request timeout for one model call (design §2 慢回路; PhysicalRSI uses 1800; the XPolicyLab default is 120).
+# NOTE: RoboDojo 266130a eval_env.py does NOT forward this key to WsModelClient
+# (only XPolicyLab utils/debug_env_client.py does). See README.md "Known gaps".
+# The official client therefore caps each call at 120 s; the harness bounds its own wait for the
+# planner at planner/config.yaml timeout.wait_in_get_action_s (90 s) and holds 1 step meanwhile (design §2).
+request_timeout_s: 1800
+
+checkpoint_num: 59999
+result_dir: "./results/etude/"
+
+# Model / action configuration
+# action_type is the result-path label and the server override. Etude emits explicit
+# per-dict joint OR ee actions (design §8.1 item 7), so this only names the run.
+action_type: ee
+# "uv" means: the Etude repo's own .venv. setup_eval_policy_server.sh finds it via ETUDE_VENV or <repo>/.venv,
+# and from a git worktree it uses the main checkout's .venv.
+policy_uv_env_path: etude_repo
+
+# harness       : etude.runner.NodeRunner drives node sequences (design §3.3; M1+).
+# m0_requery    : plain pi0.5. Each get_action returns the first exec_steps rows of a fresh chunk (design §5 M0).
+mode: harness
+# m0_requery: N (design §5: N in {5,10,15,25,50}).
+# harness: the chunk divisor of budget()/chunks_left (NodeRunner and the MCP budget tool alike), the
+# exec_steps of no-VLM fallback nodes, and, with vla_exec_steps_fixed: true, the exec_steps of EVERY
+# vla node (planner values are overridden; design §6 control "M1 内 VLA 节点 exec_steps 固定为 N*").
+# With vla_exec_steps_fixed: false the planner's per-node stop.exec_steps is executed as written.
+exec_steps: 25
+vla_exec_steps_fixed: false
+
+backend:
+  # remote    : openpi serve_policy.py over websocket+msgpack (design §2 P3, §8.1 item 8)
+  # inprocess : load the checkpoint inside this process (the official Pi_05 path; needs openpi deps)
+  # fake      : etude.fakes.FakePolicy (demos only)
+  kind: remote
+  # Optional "module:Class" override. When it is null, etude.adapter.xpl_model.backend_spec maps
+  # kind to etude.backends.base.make_backend (pi05_remote | pi05_inprocess | fake).
+  class: null
+  host: localhost
+  port: 8000
+  # used by kind=inprocess
+  train_config_name: pi05_base_aloha_full_sim_arx-x5_seed_0
+  checkpoint_dir: ~/models/robodojo-ckpt/ckpt/RoboDojo/Pi_05/RoboDojo-sim-arx_x5-joint-0/59999
+  repo_id: arx_x5_sim
+  horizon: 50
+
+# Harness mode (design §2 P2): "module:Class", built with Class.from_config(cfg).
+# HarnessRunner builds etude.runner.NodeRunner from the sections below and runs the MCP server
+# for the pi planner. See etude/adapter/harness_build.py.
+runner:
+  class: etude.adapter.harness_build:HarnessRunner
+
+planner:
+  # pi_rpc: `pi --mode rpc` (P1) + MCP server (planner/config.yaml, planner/.pi/mcp.json) | fake
+  kind: pi_rpc
+  # null means planner/config.yaml decides. The MCP port must match planner/.pi/mcp.json.
+  # Optional pass-through to PiRpcPlanner: pi_cmd (list), traces_root, timeout_s, env.
+  model: null
+  provider: null
+  mcp_host: null
+  mcp_port: null
+
+perceiver:
+  kind: owlv2          # owlv2 | color_blob | fake (design §4 perceive, §8.4 #6)
+
+verifier:
+  kind: code           # code | fake (design §4 判决 JSON)
+
+memory:
+  kind: none           # none (M1 "记忆关") | db (M2: memory_db/, frozen at eval) | fake
+  frozen: true
+
+trace:
+  kind: file           # file (traces/<episode_id>/) | none | fake
+  dir: null
+
+# deploy.py audit (design §2 边界落地): strict | warn | off
+deploy_hash_check: strict
+# Rolling window of full observation frames kept for the verifier/runner.
+# Chunk-boundary frames are always kept.
+history_len: 64
+# Per-episode JSONL summaries (steps, chunks, infer time, wall time). Empty means off.
+# ETUDE_LOG_DIR overrides it.
+log_dir: ""
+
+port: 6000

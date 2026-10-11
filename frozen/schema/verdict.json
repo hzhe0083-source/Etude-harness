@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "etude/frozen/schema/verdict.json",
+  "title": "Etude node verdict (design §4 判决 JSON)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["node", "kind", "predicates", "evidence_refs", "source", "t_chunk"],
+  "properties": {
+    "node": {"type": "string", "pattern": "^n[0-9]{1,3}$"},
+    "kind": {"enum": ["Pass", "Fail", "InsufficientEvidence", "Blocked", "SafetyStop"]},
+    "predicates": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["v", "conf", "src"],
+        "properties": {
+          "v": {"type": ["boolean", "null"]},
+          "conf": {"type": "number", "minimum": 0, "maximum": 1},
+          "src": {"type": "string"}
+        }
+      }
+    },
+    "evidence_refs": {"type": "array", "items": {"type": "string"}},
+    "source": {"enum": ["code_verifier", "inspect_second_opinion"]},
+    "t_chunk": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"type": "integer", "minimum": 0}
+    },
+    "scene_intact": {
+      "type": ["boolean", "null"],
+      "description": "optional derived field on non-Pass verdicts: detected non-target objects not_moved vs the episode t=0 keyframe (rgb_diff.not_moved_max); null = undecidable; never changes kind (design §4; Recova 2610.01178 App. B)"
+    }
+  }
+}

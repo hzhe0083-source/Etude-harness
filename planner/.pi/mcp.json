@@ -1,0 +1,21 @@
+{
+  "settings": {
+    "toolPrefix": "none",
+    "directTools": true
+  },
+  "mcpServers": {
+    "etude": {
+      "url": "http://127.0.0.1:8765/mcp",
+      "lifecycle": "eager",
+      "directTools": [
+        "observe",
+        "inspect",
+        "perceive",
+        "memory_lookup",
+        "submit_sequence",
+        "get_verdict",
+        "budget"
+      ]
+    }
+  }
+}

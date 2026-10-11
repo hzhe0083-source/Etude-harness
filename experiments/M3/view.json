@@ -1,0 +1,35 @@
+{
+  "rows": {
+    "key": "surface",
+    "values": [
+      "planner_prompt",
+      "recovery_rules",
+      "skill_md"
+    ]
+  },
+  "cols": {
+    "key": "candidate",
+    "values": [
+      "incumbent_v0",
+      "incumbent_v1",
+      "incumbent_v2",
+      "incumbent_v3",
+      "incumbent_v4",
+      "r1",
+      "r2",
+      "r3",
+      "r4"
+    ]
+  },
+  "cell": {
+    "match": {},
+    "metric": "success_rate",
+    "replicates": {
+      "key": "seed",
+      "values": [
+        "0",
+        "1"
+      ]
+    }
+  }
+}

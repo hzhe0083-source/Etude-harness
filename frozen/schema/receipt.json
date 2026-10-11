@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "etude/frozen/schema/receipt.json",
+  "title": "Etude lineage receipt (design §4 lineage 收据)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receipt_id", "parent", "candidate", "surface", "diff_sha", "hypothesis", "gates", "cost", "decision", "evaluated_on", "env", "rollback"],
+  "properties": {
+    "receipt_id": {"type": "string", "pattern": "^r[0-9]{4,}$"},
+    "parent": {"type": "string"},
+    "candidate": {"type": "string"},
+    "surface": {"enum": ["prompts/planner.md", "rules/recovery.yaml", "skills/SKILL.md"]},
+    "diff_sha": {"type": "string"},
+    "hypothesis": {"type": "string"},
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "L0": {"type": "boolean"},
+        "L1": {"type": "string", "pattern": "^[0-9]+/[0-9]+$"},
+        "L2": {"type": "string", "pattern": "^[0-9]+/[0-9]+$"},
+        "L3": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["b", "c", "eps", "p"],
+          "properties": {
+            "b": {"type": "integer", "minimum": 0},
+            "c": {"type": "integer", "minimum": 0},
+            "eps": {"type": "number"},
+            "p": {"type": "number", "minimum": 0, "maximum": 1}
+          }
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vlm_tokens_per_ep": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}},
+        "wall_per_ep_s": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}
+      }
+    },
+    "decision": {"enum": ["accept", "reject"]},
+    "evaluated_on": {
+      "type": "object",
+      "properties": {
+        "V": {"type": "string"},
+        "tasks": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "env": {
+      "type": "object",
+      "properties": {
+        "robodojo": {"type": "string"},
+        "xpolicylab": {"type": "string"},
+        "pi05": {"type": "string"},
+        "model": {"type": "string"}
+      }
+    },
+    "rollback": {"type": "string"},
+    "research_run": {"type": ["string", "null"], "description": "Research OS Run label or ULID (research/ledger.json); extension of design §4"}
+  }
+}

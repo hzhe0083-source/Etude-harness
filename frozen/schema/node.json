@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "etude/frozen/schema/node.json",
+  "title": "Etude plan node (design §4 节点 schema)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "executor", "instruction", "args", "stop", "postcondition", "on_fail", "evidence"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^n[0-9]{1,3}$"},
+    "executor": {"enum": ["vla", "ee_move", "gripper"]},
+    "instruction": {"type": "string", "maxLength": 300},
+    "args": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target": {"type": "string", "pattern": "^perceive\\(\".+\"\\)$", "maxLength": 200},
+        "cmd": {"enum": ["open", "close"]},
+        "arm": {"enum": ["left", "right"]}
+      }
+    },
+    "stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stall_chunks", "max_chunks", "exec_steps"],
+      "properties": {
+        "stall_chunks": {"type": "integer", "minimum": 1, "maximum": 10},
+        "max_chunks": {"type": "integer", "minimum": 1, "maximum": 40},
+        "exec_steps": {"type": "integer", "minimum": 1, "maximum": 50}
+      }
+    },
+    "postcondition": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "string",
+        "anyOf": [
+          {"pattern": "^gripper_holding(\\((left|right)\\))?$"},
+          {"pattern": "^target_lifted(\\(>(0|[1-9][0-9]*)?\\.[0-9]{1,3}m\\))?$"},
+          {"pattern": "^target_in\\([A-Za-z_ \"'-]+,[A-Za-z_ \"'-]+\\)$"},
+          {"pattern": "^target_on\\([A-Za-z_ \"'-]+,[A-Za-z_ \"'-]+\\)$"},
+          {"pattern": "^stacked\\(\\[[A-Za-z_ \"'-]+(,[A-Za-z_ \"'-]+)+\\]\\)$"},
+          {"pattern": "^moved\\([A-Za-z_ \"'-]+\\)$"},
+          {"pattern": "^not_moved\\([A-Za-z_ \"'-]+\\)$"},
+          {"pattern": "^arm_home(\\((left|right)\\))?$"}
+        ]
+      }
+    },
+    "on_fail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retry", "then"],
+      "properties": {
+        "retry": {"type": "integer", "minimum": 0, "maximum": 3},
+        "then": {"enum": ["previous_node", "replan", "abort"]}
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {"enum": ["wrist_rgb_diff", "head_rgb_diff", "gripper_width", "ee_pose", "joint_state", "detection"]}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"executor": {"const": "ee_move"}}},
+      "then": {"properties": {"args": {"required": ["target"]}}}
+    },
+    {
+      "if": {"properties": {"executor": {"const": "gripper"}}},
+      "then": {"properties": {"args": {"required": ["cmd"]}}}
+    }
+  ]
+}

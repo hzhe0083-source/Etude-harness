@@ -1,0 +1,52 @@
+# P1 planner (pi-mono over `pi --mode rpc`) — design §2 P1, §8.2 F5, §8.3 "规划模型与上限".
+# Loader: etude.planner.rpc_driver.load_planner_config(). Not an evolvable surface.
+version: 1
+
+pi:
+  executable: pi                 # override: $ETUDE_PI or PiRpcPlanner(pi_cmd=[...])
+  # Model actually selectable on this machine today: ~/.pi/agent/settings.json sets no
+  # default model and ~/.pi/agent/models-store.json only caches the openai catalogue,
+  # so we pick an image-capable openai entry from it (in $2.5 / out $15 per M tokens).
+  # NOTE: ~/.pi/agent/auth.json has no provider yet — run `pi auth` / set OPENAI_API_KEY
+  # (or ANTHROPIC_API_KEY for the recommended model) before a real run.
+  provider: openai
+  model: gpt-5.4
+  # Design recommendation (§1, §8.3): plan with claude-sonnet-5-5 ($2/$10 per M, §3.4 c_call).
+  recommended_model: anthropic/claude-sonnet-5-5
+  thinking: low
+  system_prompt: SYSTEM.md                   # relative to planner/; passed as --system-prompt <text>
+  append_system_prompts:                     # passed as --append-system-prompt <file>
+    - ../evolvable/prompts/planner.md        # evolvable surface 1
+    - ../evolvable/skills/SKILL.md           # evolvable surface 3
+  extra_args:
+    - --no-builtin-tools      # no read/bash/edit/write; extension tools (MCP direct tools) stay
+    - --no-context-files      # no AGENTS.md / CLAUDE.md from the repo
+    - --no-skills
+    - --no-prompt-templates
+    - --approve               # trust planner/.pi (mcp.json + extensions/guard.ts) for this run
+
+mcp:                          # must match planner/.pi/mcp.json url
+  host: 127.0.0.1
+  port: 8765
+  path: /mcp
+
+timeout:
+  plan_s: 1800                # total cap on one plan call (abort pi after this); runs in a background thread
+  # Design §2 慢回路 / §8.2 F5: the official eval client (RoboDojo eval_env.py) does not forward
+  # request_timeout_s, so every update_obs/get_action call is capped at 120 s. NodeRunner waits at
+  # most this long per get_action, then returns a 1-step hold chunk and keeps planning in the background.
+  wait_in_get_action_s: 90
+  abort_grace_s: 15           # after {"type":"abort"}, wait this long for agent_settled, then kill
+
+guard:
+  required: true              # discard a sequence if guard.ts never reported (setStatus "etude-guard")
+  # guard.ts blocks further non-submit calls beyond this (env ETUDE_MAX_TOOL_CALLS). Clamped to the
+  # frozen budget.max_tool_calls_per_plan (frozen/params/thresholds.yaml) by both rpc_driver and guard.ts.
+  # Per-episode LLM requests (assistant turns) are capped by frozen budget.vlm_requests_per_episode:
+  # rpc_driver counts message_end events and aborts pi when the cap is reached.
+  max_tool_calls_per_plan: 40
+
+prompt:
+  attach_last_frame: false    # true: attach the latest head image to the prompt (saves one observe)
+  max_keyframe_refs: 8
+  memory_top_k: 3             # = frozen budget.memory_top_k
