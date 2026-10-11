@@ -14,7 +14,8 @@ Modes (deploy.yml ``mode``)
   receives every observation frame and produces each chunk. The default is
   :class:`etude.adapter.harness_build.HarnessRunner`, which wraps
   ``etude.runner.NodeRunner``, its components and the MCP server. The runner
-  may block in ``get_action`` while the planner runs, up to ``request_timeout_s``.
+  may block in ``get_action`` while the planner runs, up to ``plan_wait_s`` (90 s),
+  which stays under the official client's fixed 120 s per-call cap.
 
 Runner contract (see :class:`RunnerProtocol`)
 ---------------------------------------------

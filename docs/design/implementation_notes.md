@@ -101,6 +101,7 @@
 uv add huggingface_hub==0.35.3          # Research OS --checkpoint 校验与 HF 归档（research/requirements.txt 的固定版本）
 uv pip install -e ~/Documents/RoboDojo/XPolicyLab/policy/Pi_05/openpi/packages/openpi-client   # 或 deploy/.../install.sh；不进 uv.lock，`uv sync --exact` 会删掉
 uv add transformers torch               # OWLv2 检测器（体积大，建议放可选依赖组）
+hf download google/owlv2-base-patch16-ensemble   # 先取权重：perceiver.local_files_only=true，构建时预加载不再联网（§11）
 ```
 
 ## 4 需要用户决定或签字的事项
@@ -290,3 +291,16 @@ uv add transformers torch               # OWLv2 检测器（体积大，建议�
 3. 设计 §7 的"同一失败签名重复 2 次直接 replan"（P4）未实现，文档已标为建议。
 4. `scene_intact=false` 触发 replan 后，runner 把参照帧换成当前帧；`etude/planner/request.py` 的提示和 `verdict.json` 的字段说明仍写"相对回合开始"。措辞待统一。
 5. `_PlanJob` 丢弃过期结果并重发时，`vlm_calls` 会记两次；当前没有路径能触发（规划期间执行冻结），接入二审或异步后要改成只记一次。
+
+## 11 PhysicalRSI 代码阅读后的三处修正（2026-10-11）
+
+来源：`docs/research/physicalrsi_2026-10-11.md`（XPolicyLab f6e309e 适配器 + PhysicalRSI 仓库 3c8cf7f 的阅读报告）。已改：
+
+| # | 原说法 / 原行为 | 改成 | 改动位置 |
+|---|---|---|---|
+| 1 | `deploy.yml` 的 `request_timeout_s` "只被 XPolicyLab 的 debug 客户端读取" | 两种客户端都固定 120 s：`eval_env.py` 不转发该键；`utils/debug_env_client.py` 转发的 `deploy_cfg` 是 argparse 参数，没有这个键（f6e309e 第 47、348 行）。`deploy.yml: 1800` 只是记录，90 s 等待 + 保持块的方案不变 | `deploy/XPolicyLab/policy/Etude/deploy.yml` 注释、同目录 README "Known gaps" #1、设计 §2 回路段与 §8.2 F5、`etude/adapter/xpl_model.py` 模块说明 |
+| 2 | 设计 §8.1 第 4 条："PhysicalRSI 的采样器不在公开适配器里" | 采样器在其适配器 `runtime/PhysicalRSI_baselines/robodojo/layout_sampling/` 下，配置正好只有我们的两个开发任务；但不验证物理可行性，注入仿真要补丁版 `main.py` 替换 `SeedManager`。只借审计钩子和"拒绝 Eval 祖先"检查，加载器自己写 | 设计 §8.1 第 4 条 |
+| 3 | `OwlV2Perceiver` 在第一次 `perceive` 时才加载权重，且 `from_pretrained` 可能联网下载；加载可能落进某次 `get_action` 的 120 s 窗口 | `make_perceiver` 构建时调用 `load()` 预加载（`perceiver.preload`，默认 true），`local_files_only` 默认 true；缺权重或缺 torch 时在开端口前就报错。只影响 harness 模式，`m0_requery` 不构建 perceiver | `etude/perceive/detector.py`、`etude/adapter/harness_build.py`、`deploy.yml` perceiver 段、本文件 §3 开工清单（先 `hf download`） |
+
+验证：`make ast-check` 0 错误 2 警告（不变）、`make demo` 通过、`DEPLOY_SHA256` 与 `deploy.py` 一致（未动 deploy.py）。
+

@@ -54,7 +54,12 @@ def make_perceiver(sec: Mapping[str, Any]) -> Any:
         from etude.perceive.detector import OwlV2Perceiver
 
         kw = {k: sec[k] for k in ("model_name", "device") if sec.get(k)}
-        return OwlV2Perceiver(**kw)
+        if "local_files_only" in sec:
+            kw["local_files_only"] = bool(sec["local_files_only"])
+        p = OwlV2Perceiver(**kw)
+        if sec.get("preload", True):
+            p.load()  # never inside get_action: the official client caps each call at 120 s
+        return p
     if kind == "color_blob":
         from etude.perceive.detector import ColorBlobPerceiver
 

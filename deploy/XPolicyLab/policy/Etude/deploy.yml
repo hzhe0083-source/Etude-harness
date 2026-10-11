@@ -16,8 +16,9 @@ seed: null
 eval_batch: false
 
 # Client request timeout for one model call (design §2 慢回路; PhysicalRSI uses 1800; the XPolicyLab default is 120).
-# NOTE: RoboDojo 266130a eval_env.py does NOT forward this key to WsModelClient
-# (only XPolicyLab utils/debug_env_client.py does). See README.md "Known gaps".
+# NOTE: RoboDojo 266130a eval_env.py does NOT forward this key to WsModelClient, and neither does
+# XPolicyLab utils/debug_env_client.py (f6e309e: its deploy_cfg is argparse args, which have no such
+# key). Both clients keep the 120 s default; this value is a record only. See README.md "Known gaps".
 # The official client therefore caps each call at 120 s; the harness bounds its own wait for the
 # planner at planner/config.yaml timeout.wait_in_get_action_s (90 s) and holds 1 step meanwhile (design §2).
 request_timeout_s: 1800
@@ -78,6 +79,8 @@ planner:
 
 perceiver:
   kind: owlv2          # owlv2 | color_blob | fake (design §4 perceive, §8.4 #6)
+  preload: true        # load weights at build time, never inside a get_action (120 s client cap)
+  local_files_only: true  # no Hub download at load time; run `hf download google/owlv2-base-patch16-ensemble` first
 
 verifier:
   kind: code           # code | fake (design §4 判决 JSON)

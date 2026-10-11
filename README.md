@@ -18,8 +18,9 @@
 | `part_D_agent_systems.md` | 底稿 D：pi-mono、openpi、Claude Code、Codex 等的模块表 |
 | `part_E1_spotter_roboharness.md` | 底稿 E1：Spotter、RoboHarness |
 | `part_E2_pyrua_showharness.md` | 底稿 E2：PyRUA-Lean、Show-Harness |
-| `vista_2610.02200.md` | VISTA 卡片：无损视觉记忆 + inspect 工具的视觉 harness，非具身 |
+| `vista_2610.02200.md` | VISTA 卡片：所有帧全存、按需 inspect 回看的视觉 harness（ARC-AGI-3，回合制，非具身）；借"默认只给最后一帧、按需回看"和"先写预期、再对照结果"，不借 read_pixels、上采样和上下文交接；附设计文档 VISTA 引用的更正 |
 | `recova_2610.01178.md` | Recova 卡片：VLM 四查询监控 + 复原验收 + DAgger 微调 π0.5；借复原验收与完成优先，不借训练 |
+| `memory_anchors_2608.26545.md` | Memory Anchors 卡片：持续模仿学习里按"表征重叠 + 动作冲突"挑旧数据进回放缓冲；v1 只借诊断思路（记忆检索防撞、L2 回归集选取），回放留给 v2 |
 
 Deep Research 用的 prompt 在 `docs/prompts/`。
 

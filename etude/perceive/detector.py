@@ -194,8 +194,12 @@ class OwlV2Perceiver(Perceiver):
     """OWLv2 open-vocabulary detector (design §4 perceive, §8.3 E row 1, §8.4 #6).
 
     ``transformers`` and ``torch`` are optional imports (not in
-    pyproject.toml); construction succeeds without them and the first
-    :meth:`perceive` raises ``ImportError`` with an install hint.
+    pyproject.toml); construction succeeds without them and :meth:`load` (or
+    the first :meth:`perceive`) raises ``ImportError`` with an install hint.
+    ``harness_build.make_perceiver`` calls :meth:`load` at build time so that
+    weights are never loaded inside a ``get_action`` call (the official client
+    caps every call at 120 s). ``local_files_only=True`` forbids a Hub download
+    at that point; fetch the weights beforehand with ``hf download``.
 
     OWLv2 pads the input to a square, so boxes are post-processed against a
     ``(S, S)`` target size with ``S = max(H, W)`` and clipped to the image.
@@ -214,9 +218,11 @@ class OwlV2Perceiver(Perceiver):
         conf_min: float | None = None,
         calibrate: Callable[[float], float] | None = None,
         root: Any = None,
+        local_files_only: bool = True,
     ):
         self.model_name = model_name
         self.device = device
+        self.local_files_only = bool(local_files_only)
         self.conf_min = perceive_conf_min(root) if conf_min is None else float(conf_min)
         self.calibrate = calibrate or (lambda s: float(s))
         self._processor: Any = None
@@ -234,6 +240,11 @@ class OwlV2Perceiver(Perceiver):
             return False
         return True
 
+    def load(self) -> None:
+        """Load processor and weights now (idempotent). Called by
+        ``make_perceiver`` so loading cannot land inside the 120 s client window."""
+        self._load()
+
     def _load(self) -> None:
         if self._model is not None:
             return
@@ -248,8 +259,9 @@ class OwlV2Perceiver(Perceiver):
         self._torch = torch
         dev = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.device = dev
-        self._processor = Owlv2Processor.from_pretrained(self.model_name)
-        self._model = Owlv2ForObjectDetection.from_pretrained(self.model_name).to(dev).eval()
+        kw = {"local_files_only": self.local_files_only}
+        self._processor = Owlv2Processor.from_pretrained(self.model_name, **kw)
+        self._model = Owlv2ForObjectDetection.from_pretrained(self.model_name, **kw).to(dev).eval()
 
     def perceive(self, query: str, image: np.ndarray, view: str) -> Detection:
         """Best OWLv2 box for text ``query`` in ``image`` from ``view`` (design §4)."""
